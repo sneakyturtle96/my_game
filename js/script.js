@@ -1,6 +1,6 @@
 // ===== KONFIGURATION =====
-const LANES_RATIO = [0.25, 0.5, 0.75];   // banor beräknas dynamiskt från skärmbredd
-const PLAYER_Y_RATIO = 0.875;            // spelarens y-position relativt skärmhöjd
+const LANES_RATIO = [0.25, 0.5, 0.75];
+const PLAYER_Y_RATIO = 0.875;
 const ITEMS_PER_LEVEL = 15;
 const ITEMS_PER_LEVEL_MAX = 20;
 const MAX_LEVEL = 10;
@@ -8,7 +8,6 @@ const LEVEL_PAUSE_MS = 2400;
 const STORAGE_KEY = 'mitt-spel-highscores';
 
 // ===== SVÅRIGHETSKURVA =====
-// Hastigheten är nu i pixlar per SEKUND (tack vare delta-baserad rörelse)
 const SPEED_MIN = 180;
 const SPEED_MAX = 700;
 const SPAWN_MIN = 550;
@@ -241,29 +240,69 @@ function create() {
         // ===== SWIPE-STYRNING =====
         let touchStartX = 0;
         let touchStartY = 0;
-        const SWIPE_THRESHOLD = 50;
-        const MAX_VERTICAL_DRIFT = 80;
+        let touchStartTime = 0;
 
         this.input.on('pointerdown', (pointer) => {
             touchStartX = pointer.x;
             touchStartY = pointer.y;
+            touchStartTime = performance.now();
         });
 
         this.input.on('pointerup', (pointer) => {
             if (gameState.gameOver || gameState.paused || !gameState.subject) return;
             if (nameInputElements.length > 0) return;
 
+            // Ignorera släpp i översta 20% (HUD-knappar)
+            if (pointer.y < H() * 0.2) return;
+
             const dx = pointer.x - touchStartX;
             const dy = pointer.y - touchStartY;
+            const dt = performance.now() - touchStartTime;
 
-            if (Math.abs(dx) < SWIPE_THRESHOLD) return;
-            if (Math.abs(dy) > MAX_VERTICAL_DRIFF) return;
+            const swipeThreshold = Math.max(30, W() * 0.05);
+            const verticalLimit = H() * 0.10;
+            const maxTime = 800;
+
+            if (dt > maxTime) return;
+            if (Math.abs(dx) < swipeThreshold) return;
+            if (Math.abs(dy) > verticalLimit) return;
+
+            console.log('[SWIPE]', { dx: Math.round(dx), dy: Math.round(dy), dt: Math.round(dt) });
 
             if (dx < 0) {
                 gameState.currentLane = Math.max(0, gameState.currentLane - 1);
             } else {
                 gameState.currentLane = Math.min(2, gameState.currentLane + 1);
             }
+        });
+
+        // ===== HANTERA FULLSCREEN OCH RESIZE =====
+        this.scale.on('resize', (gameSize) => {
+            console.log('[RESIZE] Ny storlek:', gameSize.width, 'x', gameSize.height);
+            repositionUI(this);
+        });
+
+        window.addEventListener('resize', () => {
+            setTimeout(() => {
+                this.scale.resize(window.innerWidth, window.innerHeight);
+                repositionUI(this);
+            }, 100);
+        });
+
+        this.scale.on('enterfullscreen', () => {
+            console.log('[FULLSCREEN] Gick in i fullscreen');
+            setTimeout(() => {
+                this.scale.resize(window.innerWidth, window.innerHeight);
+                repositionUI(this);
+            }, 100);
+        });
+
+        this.scale.on('leavefullscreen', () => {
+            console.log('[FULLSCREEN] Lämnade fullscreen');
+            setTimeout(() => {
+                this.scale.resize(window.innerWidth, window.innerHeight);
+                repositionUI(this);
+            }, 100);
         });
 
         showStartMenu(this);
@@ -278,6 +317,25 @@ function create() {
 function clearElements(elements) {
     elements.forEach(el => { if (el && el.active) el.destroy(); });
     return [];
+}
+
+// ===== HJÄLPFUNKTION: FLYTTA UI VID RESIZE =====
+function repositionUI(scene) {
+    const w = W();
+    const h = H();
+
+    if (scoreText) scoreText.setPosition(32, 32);
+    if (livesText) livesText.setPosition(32, 92);
+    if (levelText) levelText.setPosition(w - 32, 32);
+    if (themeText) themeText.setPosition(w / 2, 180);
+
+    if (pauseButton) pauseButton.setPosition(w - 80, 112);
+    if (fullscreenButton) fullscreenButton.setPosition(w - 80, 220);
+
+    if (player && gameState.subject) {
+        player.y = playerY();
+        player.x = laneX(gameState.currentLane);
+    }
 }
 
 // ===== STARTMENY =====
@@ -1048,7 +1106,6 @@ function showGameOverScreen(scene, wasHighscore) {
 function update(time, delta) {
     if (gameState.gameOver || gameState.paused || !gameState.subject) return;
 
-    // Delta-baserad rörelse: konvertera millisekunder till sekunder
     const dt = delta / 1000;
 
     if (player) {
@@ -1058,7 +1115,6 @@ function update(time, delta) {
     if (items) {
         items.getChildren().forEach((item) => {
             const speed = item.getData('speed') || 200;
-            // Hastigheten är nu i pixlar per SEKUND
             item.y += speed * dt;
 
             if (item.y > H() + 80) {
