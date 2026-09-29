@@ -1,8 +1,6 @@
 // ===== KONFIGURATION =====
-const GAME_WIDTH = 960;
-const GAME_HEIGHT = 1280;
-const LANES = [240, 480, 720];
-const PLAYER_Y = 1120;
+const LANES_RATIO = [0.25, 0.5, 0.75];   // banor beräknas dynamiskt från skärmbredd
+const PLAYER_Y_RATIO = 0.875;            // spelarens y-position relativt skärmhöjd
 const ITEMS_PER_LEVEL = 15;
 const ITEMS_PER_LEVEL_MAX = 20;
 const MAX_LEVEL = 10;
@@ -10,8 +8,9 @@ const LEVEL_PAUSE_MS = 2400;
 const STORAGE_KEY = 'mitt-spel-highscores';
 
 // ===== SVÅRIGHETSKURVA =====
-const SPEED_MIN = 90;
-const SPEED_MAX = 350;
+// Hastigheten är nu i pixlar per SEKUND (tack vare delta-baserad rörelse)
+const SPEED_MIN = 180;
+const SPEED_MAX = 700;
 const SPAWN_MIN = 550;
 const SPAWN_MAX = 2000;
 
@@ -48,6 +47,7 @@ let levelText;
 let themeText;
 let spawnTimer;
 let pauseButton;
+let fullscreenButton;
 let pauseMenuElements = [];
 let allMenuElements = [];
 let gameOverElements = [];
@@ -55,6 +55,12 @@ let nameInputElements = [];
 let nameInputValue = '';
 let nameInputText = null;
 let music;
+
+// Dynamiska hjälpfunktioner för skärmmått
+function W() { return game.scale.width; }
+function H() { return game.scale.height; }
+function laneX(i) { return W() * LANES_RATIO[i]; }
+function playerY() { return H() * PLAYER_Y_RATIO; }
 
 console.log('[BOOT] script.js laddas...');
 
@@ -64,10 +70,13 @@ const config = {
     backgroundColor: '#1a1a2e',
     parent: document.body,
     scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: GAME_WIDTH,
-        height: GAME_HEIGHT
+        width: '100%',
+        height: '100%'
+    },
+    render: {
+        roundPixels: false
     },
     audio: {
         disableWebAudio: false
@@ -79,12 +88,14 @@ const config = {
     }
 };
 
+let game;
+
 if (typeof Phaser === 'undefined') {
     console.error('[FEL] Phaser är inte laddat!');
     document.body.innerHTML = '<h1 style="color:red;">Phaser kunde inte laddas.</h1>';
 } else {
     console.log('[BOOT] Phaser version:', Phaser.VERSION);
-    new Phaser.Game(config);
+    game = new Phaser.Game(config);
 }
 
 // ===== PRELOAD =====
@@ -154,7 +165,7 @@ function create() {
     console.log('[SCENE] create() körs');
 
     try {
-        player = this.add.rectangle(LANES[gameState.currentLane], PLAYER_Y, 88, 88, 0x00ff88);
+        player = this.add.rectangle(laneX(gameState.currentLane), playerY(), 88, 88, 0x00ff88);
         player.setVisible(false);
 
         items = this.add.group();
@@ -165,16 +176,16 @@ function create() {
         livesText = this.add.text(32, 92, 'Liv: 3', {
             fontSize: '44px', fill: '#ff6688'
         }).setVisible(false);
-        levelText = this.add.text(GAME_WIDTH - 32, 32, 'Nivå: 1', {
+        levelText = this.add.text(W() - 32, 32, 'Nivå: 1', {
             fontSize: '44px', fill: '#88ccff'
         }).setOrigin(1, 0).setVisible(false);
 
-        themeText = this.add.text(GAME_WIDTH / 2, 180, '', {
+        themeText = this.add.text(W() / 2, 180, '', {
             fontSize: '36px', fill: '#ffff88'
         }).setOrigin(0.5, 0).setVisible(false);
 
         // Pausknapp
-        pauseButton = this.add.container(GAME_WIDTH - 80, 112);
+        pauseButton = this.add.container(W() - 80, 112);
         const pauseBg = this.add.circle(0, 0, 44, 0x000000, 0.5);
         const bar1 = this.add.rectangle(-12, 0, 8, 40, 0xffffff);
         const bar2 = this.add.rectangle(12, 0, 8, 40, 0xffffff);
@@ -189,7 +200,7 @@ function create() {
         });
 
         // Helskärmsknapp
-        const fullscreenButton = this.add.container(GAME_WIDTH - 80, 220);
+        fullscreenButton = this.add.container(W() - 80, 220);
         const fsBg = this.add.circle(0, 0, 44, 0x000000, 0.5);
         const fsIcon = this.add.text(0, 0, '⛶', {
             fontSize: '44px', fill: '#ffffff'
@@ -240,13 +251,13 @@ function create() {
 
         this.input.on('pointerup', (pointer) => {
             if (gameState.gameOver || gameState.paused || !gameState.subject) return;
-            if (nameInputElements.length > 0) return;  // ignorera swipe när namnskärmen visas
+            if (nameInputElements.length > 0) return;
 
             const dx = pointer.x - touchStartX;
             const dy = pointer.y - touchStartY;
 
             if (Math.abs(dx) < SWIPE_THRESHOLD) return;
-            if (Math.abs(dy) > MAX_VERTICAL_DRIFT) return;
+            if (Math.abs(dy) > MAX_VERTICAL_DRIFF) return;
 
             if (dx < 0) {
                 gameState.currentLane = Math.max(0, gameState.currentLane - 1);
@@ -274,7 +285,7 @@ function showStartMenu(scene) {
     allMenuElements = clearElements(allMenuElements);
 
     allMenuElements.push(
-        scene.add.text(GAME_WIDTH / 2, 300, 'VÄLJ ÄMNE', {
+        scene.add.text(W() / 2, H() * 0.23, 'VÄLJ ÄMNE', {
             fontSize: '64px', fill: '#ffffff', fontStyle: 'bold'
         }).setOrigin(0.5)
     );
@@ -286,11 +297,11 @@ function showStartMenu(scene) {
     ];
 
     subjects.forEach((subj, i) => {
-        const y = 520 + i * 180;
-        const btn = scene.add.rectangle(GAME_WIDTH / 2, y, 520, 120, subj.color)
+        const y = H() * 0.42 + i * (H() * 0.14);
+        const btn = scene.add.rectangle(W() / 2, y, Math.min(520, W() * 0.85), 120, subj.color)
             .setInteractive({ useHandCursor: true });
 
-        const label = scene.add.text(GAME_WIDTH / 2, y, subj.label, {
+        const label = scene.add.text(W() / 2, y, subj.label, {
             fontSize: '48px', fill: '#ffffff', fontStyle: 'bold'
         }).setOrigin(0.5);
 
@@ -309,7 +320,7 @@ function showStartMenu(scene) {
     });
 
     allMenuElements.push(
-        scene.add.text(GAME_WIDTH / 2, 1160, 'Välj ett ämne för att börja', {
+        scene.add.text(W() / 2, H() * 0.91, 'Välj ett ämne för att börja', {
             fontSize: '32px', fill: '#888888'
         }).setOrigin(0.5)
     );
@@ -335,7 +346,8 @@ function startGame(scene, subject) {
     gameState._engelskaOrder = null;
 
     player.setVisible(true);
-    player.x = LANES[1];
+    player.x = laneX(1);
+    player.y = playerY();
     scoreText.setVisible(true);
     livesText.setVisible(true);
     levelText.setVisible(true);
@@ -542,7 +554,8 @@ function spawnItem(scene) {
         }
 
         const cfg = gameState.currentLevelConfig.generate();
-        const laneX = LANES[Phaser.Math.Between(0, 2)];
+        const laneIdx = Phaser.Math.Between(0, 2);
+        const x = laneX(laneIdx);
 
         const label = scene.add.text(0, 0, cfg.display, {
             fontSize: '40px',
@@ -558,22 +571,10 @@ function spawnItem(scene) {
         const gfx = scene.add.graphics();
         gfx.fillStyle(0x333333, 1);
         gfx.lineStyle(6, 0xffffff, 1);
-        gfx.fillRoundedRect(
-            -boxWidth / 2,
-            -boxHeight / 2,
-            boxWidth,
-            boxHeight,
-            boxHeight / 2
-        );
-        gfx.strokeRoundedRect(
-            -boxWidth / 2,
-            -boxHeight / 2,
-            boxWidth,
-            boxHeight,
-            boxHeight / 2
-        );
+        gfx.fillRoundedRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, boxHeight / 2);
+        gfx.strokeRoundedRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight, boxHeight / 2);
 
-        const item = scene.add.container(laneX, -60, [gfx, label]);
+        const item = scene.add.container(x, -60, [gfx, label]);
 
         item.setData('isCorrect', cfg.isCorrect);
         item.setData('speed', getFallSpeed(gameState.level));
@@ -584,7 +585,7 @@ function spawnItem(scene) {
         gameState.itemsThisLevel += 1;
 
         console.log('[SPAWN]', cfg.display, 'rätt?', cfg.isCorrect,
-                    'vid x=', laneX, 'y=', item.y,
+                    'vid x=', x, 'y=', item.y,
                     '| bredd=', boxWidth,
                     '| hastighet=', getFallSpeed(gameState.level),
                     '(', gameState.itemsThisLevel, '/', itemsPerLevel, ')');
@@ -597,12 +598,15 @@ function spawnItem(scene) {
 function checkCollisions(scene) {
     if (gameState.gameOver || gameState.paused) return;
 
+    const px = player.x;
+    const py = player.y;
+
     items.getChildren().forEach((item) => {
         const itemWidth = item.getData('width') || 88;
         const itemHeight = item.getData('height') || 88;
 
-        const dx = Math.abs(item.x - player.x);
-        const dy = Math.abs(item.y - player.y);
+        const dx = Math.abs(item.x - px);
+        const dy = Math.abs(item.y - py);
 
         const overlapX = dx < (itemWidth / 2 + 44);
         const overlapY = dy < (itemHeight / 2 + 44);
@@ -668,18 +672,17 @@ function pauseGame(scene) {
 
     console.log('[PAUSE] Spelet pausat');
 
-    const overlay = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
-                                        GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75);
+    const overlay = scene.add.rectangle(W() / 2, H() / 2, W(), H(), 0x000000, 0.75);
 
-    const title = scene.add.text(GAME_WIDTH / 2, 320, 'PAUSAT', {
+    const title = scene.add.text(W() / 2, H() * 0.25, 'PAUSAT', {
         fontSize: '72px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
 
     pauseMenuElements = [overlay, title];
 
-    const btnContinue = scene.add.rectangle(GAME_WIDTH / 2, 560, 560, 110, 0x00cc66)
+    const btnContinue = scene.add.rectangle(W() / 2, H() * 0.44, Math.min(560, W() * 0.85), 110, 0x00cc66)
         .setInteractive({ useHandCursor: true });
-    const lblContinue = scene.add.text(GAME_WIDTH / 2, 560, 'Fortsätt spelet', {
+    const lblContinue = scene.add.text(W() / 2, H() * 0.44, 'Fortsätt spelet', {
         fontSize: '40px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     btnContinue.on('pointerover', () => btnContinue.setFillStyle(0x00cc66, 1.3));
@@ -687,9 +690,9 @@ function pauseGame(scene) {
     btnContinue.on('pointerdown', () => resumeGame(scene));
     pauseMenuElements.push(btnContinue, lblContinue);
 
-    const btnChange = scene.add.rectangle(GAME_WIDTH / 2, 720, 560, 110, 0x6688ff)
+    const btnChange = scene.add.rectangle(W() / 2, H() * 0.56, Math.min(560, W() * 0.85), 110, 0x6688ff)
         .setInteractive({ useHandCursor: true });
-    const lblChange = scene.add.text(GAME_WIDTH / 2, 720, 'Byt ämne', {
+    const lblChange = scene.add.text(W() / 2, H() * 0.56, 'Byt ämne', {
         fontSize: '40px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     btnChange.on('pointerover', () => btnChange.setFillStyle(0x6688ff, 1.3));
@@ -697,9 +700,9 @@ function pauseGame(scene) {
     btnChange.on('pointerdown', () => changeSubject(scene));
     pauseMenuElements.push(btnChange, lblChange);
 
-    const btnRecords = scene.add.rectangle(GAME_WIDTH / 2, 880, 560, 110, 0xffaa33)
+    const btnRecords = scene.add.rectangle(W() / 2, H() * 0.68, Math.min(560, W() * 0.85), 110, 0xffaa33)
         .setInteractive({ useHandCursor: true });
-    const lblRecords = scene.add.text(GAME_WIDTH / 2, 880, 'Se mina rekord', {
+    const lblRecords = scene.add.text(W() / 2, H() * 0.68, 'Se mina rekord', {
         fontSize: '40px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     btnRecords.on('pointerover', () => btnRecords.setFillStyle(0xffaa33, 1.3));
@@ -707,7 +710,7 @@ function pauseGame(scene) {
     btnRecords.on('pointerdown', () => showRecords(scene));
     pauseMenuElements.push(btnRecords, lblRecords);
 
-    const hint = scene.add.text(GAME_WIDTH / 2, 1100, 'Tryck ESC för att fortsätta', {
+    const hint = scene.add.text(W() / 2, H() * 0.86, 'Tryck ESC för att fortsätta', {
         fontSize: '28px', fill: '#888888'
     }).setOrigin(0.5);
     pauseMenuElements.push(hint);
@@ -757,10 +760,9 @@ function changeSubject(scene) {
 function showRecords(scene) {
     pauseMenuElements = clearElements(pauseMenuElements);
 
-    const overlay = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
-                                        GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85);
+    const overlay = scene.add.rectangle(W() / 2, H() / 2, W(), H(), 0x000000, 0.85);
 
-    const title = scene.add.text(GAME_WIDTH / 2, 280, 'MINA REKORD', {
+    const title = scene.add.text(W() / 2, H() * 0.22, 'MINA REKORD', {
         fontSize: '64px', fill: '#ffaa33', fontStyle: 'bold'
     }).setOrigin(0.5);
 
@@ -769,16 +771,16 @@ function showRecords(scene) {
     const records = loadRecords();
 
     if (records.length === 0) {
-        const empty = scene.add.text(GAME_WIDTH / 2, 600, 'Inga rekord ännu', {
+        const empty = scene.add.text(W() / 2, H() * 0.47, 'Inga rekord ännu', {
             fontSize: '40px', fill: '#888888'
         }).setOrigin(0.5);
         pauseMenuElements.push(empty);
     } else {
         records.slice(0, 3).forEach((rec, i) => {
-            const y = 460 + i * 140;
+            const y = H() * 0.36 + i * 140;
             const medal = ['🥇', '🥈', '🥉'][i];
             const name = rec.name || 'Anonym';
-            const line = scene.add.text(GAME_WIDTH / 2, y,
+            const line = scene.add.text(W() / 2, y,
                 `${medal}  ${name} – ${rec.score} p (${rec.subject})`, {
                 fontSize: '36px', fill: '#ffffff'
             }).setOrigin(0.5);
@@ -786,9 +788,9 @@ function showRecords(scene) {
         });
     }
 
-    const backBtn = scene.add.rectangle(GAME_WIDTH / 2, 1040, 480, 110, 0x00cc66)
+    const backBtn = scene.add.rectangle(W() / 2, H() * 0.81, Math.min(480, W() * 0.8), 110, 0x00cc66)
         .setInteractive({ useHandCursor: true });
-    const backLbl = scene.add.text(GAME_WIDTH / 2, 1040, 'Tillbaka', {
+    const backLbl = scene.add.text(W() / 2, H() * 0.81, 'Tillbaka', {
         fontSize: '40px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     backBtn.on('pointerover', () => backBtn.setFillStyle(0x00cc66, 1.3));
@@ -844,36 +846,33 @@ function showNameInput(scene, score, subject, onComplete) {
     nameInputValue = '';
     nameInputElements = clearElements(nameInputElements);
 
-    const overlay = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
-                                        GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.9);
+    const overlay = scene.add.rectangle(W() / 2, H() / 2, W(), H(), 0x000000, 0.9);
 
-    const title = scene.add.text(GAME_WIDTH / 2, 320, '🏆 NYTT REKORD!', {
+    const title = scene.add.text(W() / 2, H() * 0.25, '🏆 NYTT REKORD!', {
         fontSize: '64px', fill: '#ffaa33', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    const scoreLine = scene.add.text(GAME_WIDTH / 2, 400,
+    const scoreLine = scene.add.text(W() / 2, H() * 0.32,
         score + ' poäng – ' + subject, {
         fontSize: '36px', fill: '#ffffff'
     }).setOrigin(0.5);
 
-    const prompt = scene.add.text(GAME_WIDTH / 2, 540, 'Skriv ditt namn:', {
+    const prompt = scene.add.text(W() / 2, H() * 0.42, 'Skriv ditt namn:', {
         fontSize: '36px', fill: '#ffffff'
     }).setOrigin(0.5);
 
-    // Inmatningsruta
-    const inputBox = scene.add.rectangle(GAME_WIDTH / 2, 660, 600, 100, 0x333333);
+    const inputBox = scene.add.rectangle(W() / 2, H() * 0.52, Math.min(600, W() * 0.85), 100, 0x333333);
     inputBox.setStrokeStyle(4, 0xffffff);
 
-    nameInputText = scene.add.text(GAME_WIDTH / 2, 660, '_', {
+    nameInputText = scene.add.text(W() / 2, H() * 0.52, '_', {
         fontSize: '48px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
 
     nameInputElements = [overlay, title, scoreLine, prompt, inputBox, nameInputText];
 
-    // Knapp: Spara
-    const saveBtn = scene.add.rectangle(GAME_WIDTH / 2, 850, 500, 110, 0x00cc66)
+    const saveBtn = scene.add.rectangle(W() / 2, H() * 0.66, Math.min(500, W() * 0.8), 110, 0x00cc66)
         .setInteractive({ useHandCursor: true });
-    const saveLbl = scene.add.text(GAME_WIDTH / 2, 850, 'Spara', {
+    const saveLbl = scene.add.text(W() / 2, H() * 0.66, 'Spara', {
         fontSize: '44px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     saveBtn.on('pointerover', () => saveBtn.setFillStyle(0x00cc66, 1.3));
@@ -885,10 +884,9 @@ function showNameInput(scene, score, subject, onComplete) {
     });
     nameInputElements.push(saveBtn, saveLbl);
 
-    // Knapp: Hoppa över
-    const skipBtn = scene.add.rectangle(GAME_WIDTH / 2, 1000, 500, 90, 0x666666)
+    const skipBtn = scene.add.rectangle(W() / 2, H() * 0.78, Math.min(500, W() * 0.8), 90, 0x666666)
         .setInteractive({ useHandCursor: true });
-    const skipLbl = scene.add.text(GAME_WIDTH / 2, 1000, 'Hoppa över', {
+    const skipLbl = scene.add.text(W() / 2, H() * 0.78, 'Hoppa över', {
         fontSize: '36px', fill: '#ffffff'
     }).setOrigin(0.5);
     skipBtn.on('pointerover', () => skipBtn.setFillStyle(0x666666, 1.3));
@@ -899,7 +897,6 @@ function showNameInput(scene, score, subject, onComplete) {
     });
     nameInputElements.push(skipBtn, skipLbl);
 
-    // Tangentbordsinmatning
     scene.input.keyboard.on('keydown', (event) => {
         if (nameInputElements.length === 0) return;
 
@@ -913,7 +910,6 @@ function showNameInput(scene, score, subject, onComplete) {
         if (event.key === 'Backspace') {
             nameInputValue = nameInputValue.slice(0, -1);
         } else if (event.key.length === 1 && nameInputValue.length < 12) {
-            // Tillåt bokstäver, siffror, mellanslag och vanliga tecken
             if (/^[a-zA-Z0-9åäöÅÄÖéèüÜ \-\_\.]$/.test(event.key)) {
                 nameInputValue += event.key;
             }
@@ -927,9 +923,7 @@ function cleanupNameInput(scene) {
     nameInputElements = clearElements(nameInputElements);
     nameInputText = null;
     nameInputValue = '';
-    // Ta bort alla keydown-lyssnare för att undvika dubbelregistrering
     scene.input.keyboard.removeAllListeners('keydown');
-    // Återställ grundläggande tangentbordsstyrning
     scene.input.keyboard.on('keydown-LEFT', () => {
         if (gameState.gameOver || gameState.paused || !gameState.subject) return;
         gameState.currentLane = Math.max(0, gameState.currentLane - 1);
@@ -973,7 +967,6 @@ function endGame(scene) {
             playSound(scene, 'highscore');
         });
 
-        // Visa namnskärmen först, sedan Game Over
         scene.time.delayedCall(2200, () => {
             showNameInput(scene, gameState.score, gameState.subject, (finalName) => {
                 saveRecord(gameState.score, gameState.subject, finalName);
@@ -982,7 +975,6 @@ function endGame(scene) {
             });
         });
     } else {
-        // Ingen highscore - visa Game Over direkt
         saveRecord(gameState.score, gameState.subject, '');
         showGameOverScreen(scene, false);
     }
@@ -990,21 +982,20 @@ function endGame(scene) {
 
 // ===== GAME OVER-SKÄRM =====
 function showGameOverScreen(scene, wasHighscore) {
-    const overlay = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
-                                        GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85);
+    const overlay = scene.add.rectangle(W() / 2, H() / 2, W(), H(), 0x000000, 0.85);
 
-    const title = scene.add.text(GAME_WIDTH / 2, 240, 'GAME OVER', {
+    const title = scene.add.text(W() / 2, H() * 0.19, 'GAME OVER', {
         fontSize: '96px', fill: '#ff4444', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    const scoreLine = scene.add.text(GAME_WIDTH / 2, 350, 'Slutpoäng: ' + gameState.score, {
+    const scoreLine = scene.add.text(W() / 2, H() * 0.27, 'Slutpoäng: ' + gameState.score, {
         fontSize: '56px', fill: '#ffffff'
     }).setOrigin(0.5);
 
     gameOverElements = [overlay, title, scoreLine];
 
     if (wasHighscore && gameState.playerName) {
-        const recordMsg = scene.add.text(GAME_WIDTH / 2, 420,
+        const recordMsg = scene.add.text(W() / 2, H() * 0.33,
             '🏆 ' + gameState.playerName + ' – NYTT REKORD!', {
             fontSize: '36px', fill: '#ffaa33', fontStyle: 'bold'
         }).setOrigin(0.5);
@@ -1013,14 +1004,14 @@ function showGameOverScreen(scene, wasHighscore) {
 
     const records = loadRecords();
     if (records.length > 0) {
-        const topLabel = scene.add.text(GAME_WIDTH / 2, 500, 'Topp 3:', {
+        const topLabel = scene.add.text(W() / 2, H() * 0.39, 'Topp 3:', {
             fontSize: '36px', fill: '#ffaa33', fontStyle: 'bold'
         }).setOrigin(0.5);
         gameOverElements.push(topLabel);
 
         records.slice(0, 3).forEach((rec, i) => {
             const name = rec.name || 'Anonym';
-            const line = scene.add.text(GAME_WIDTH / 2, 560 + i * 52,
+            const line = scene.add.text(W() / 2, H() * 0.44 + i * 52,
                 `${i + 1}. ${name} – ${rec.score} p (${rec.subject})`, {
                 fontSize: '30px', fill: '#ffffff'
             }).setOrigin(0.5);
@@ -1028,9 +1019,9 @@ function showGameOverScreen(scene, wasHighscore) {
         });
     }
 
-    const btnSame = scene.add.rectangle(GAME_WIDTH / 2, 840, 600, 110, 0x00cc66)
+    const btnSame = scene.add.rectangle(W() / 2, H() * 0.66, Math.min(600, W() * 0.85), 110, 0x00cc66)
         .setInteractive({ useHandCursor: true });
-    const lblSame = scene.add.text(GAME_WIDTH / 2, 840, 'Spela igen – samma ämne', {
+    const lblSame = scene.add.text(W() / 2, H() * 0.66, 'Spela igen – samma ämne', {
         fontSize: '36px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     btnSame.on('pointerover', () => btnSame.setFillStyle(0x00cc66, 1.3));
@@ -1042,9 +1033,9 @@ function showGameOverScreen(scene, wasHighscore) {
     });
     gameOverElements.push(btnSame, lblSame);
 
-    const btnChange = scene.add.rectangle(GAME_WIDTH / 2, 1000, 600, 110, 0x6688ff)
+    const btnChange = scene.add.rectangle(W() / 2, H() * 0.78, Math.min(600, W() * 0.85), 110, 0x6688ff)
         .setInteractive({ useHandCursor: true });
-    const lblChange = scene.add.text(GAME_WIDTH / 2, 1000, 'Spela igen – byt ämne', {
+    const lblChange = scene.add.text(W() / 2, H() * 0.78, 'Spela igen – byt ämne', {
         fontSize: '36px', fill: '#ffffff', fontStyle: 'bold'
     }).setOrigin(0.5);
     btnChange.on('pointerover', () => btnChange.setFillStyle(0x6688ff, 1.3));
@@ -1054,19 +1045,23 @@ function showGameOverScreen(scene, wasHighscore) {
 }
 
 // ===== UPDATE =====
-function update() {
+function update(time, delta) {
     if (gameState.gameOver || gameState.paused || !gameState.subject) return;
 
+    // Delta-baserad rörelse: konvertera millisekunder till sekunder
+    const dt = delta / 1000;
+
     if (player) {
-        player.x = Phaser.Math.Linear(player.x, LANES[gameState.currentLane], 0.25);
+        player.x = Phaser.Math.Linear(player.x, laneX(gameState.currentLane), 0.25);
     }
 
     if (items) {
         items.getChildren().forEach((item) => {
             const speed = item.getData('speed') || 200;
-            item.y += speed * (2 / 60);
+            // Hastigheten är nu i pixlar per SEKUND
+            item.y += speed * dt;
 
-            if (item.y > GAME_HEIGHT + 80) {
+            if (item.y > H() + 80) {
                 item.destroy();
             }
         });
